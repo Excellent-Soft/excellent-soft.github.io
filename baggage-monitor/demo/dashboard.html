@@ -85,10 +85,17 @@
   .log .warn { color: var(--review); }
   /* cross-flight bars */
   .cmp { display: flex; flex-direction: column; gap: 8px; }
-  .cmp-row { display: grid; grid-template-columns: 110px 1fr 70px; gap: 10px; align-items: center; }
-  .cmp-track { background: var(--pending-soft); height: 16px; border-radius: 3px; }
-  .cmp-fill { height: 100%; background: var(--ink); border-radius: 3px; opacity: .8; }
-  .cmp-row[data-active="true"] .cmp-fill { background: var(--accent); opacity: 1; }
+  .cmp-row { display: grid; grid-template-columns: 150px 1fr 62px; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 6px; }
+  .cmp-row[data-active="true"] { background: var(--pending-soft); font-weight: 600; }
+  .cmp-track { position: relative; background: var(--pending-soft); height: 16px; border-radius: 3px; }
+  .cmp-row[data-active="true"] .cmp-track { background: var(--surface); }
+  .cmp-fill { height: 100%; border-radius: 3px; }
+  .cmp-fill.under { background: var(--done); }
+  .cmp-fill.at { background: var(--accent); }
+  .cmp-fill.over { background: var(--review); }
+  .cmp-limit { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0 0; color: var(--muted); font-size: .85rem; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
   .two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
   @media (max-width: 760px) {
     .two { grid-template-columns: 1fr; }
@@ -141,6 +148,12 @@
     <section class="panel">
       <h2>ফ্লাইটভিত্তিক মোট ডেলিভারি সময়</h2>
       <div class="cmp" id="cmp"></div>
+      <p class="legend">
+        <span><i style="background:var(--done)"></i>৫০ মিনিটের নিচে</span>
+        <span><i style="background:var(--accent)"></i>ঠিক ৫০ মিনিট</span>
+        <span><i style="background:var(--review)"></i>৫০ মিনিটের বেশি</span>
+        <span>কালো দাগ = ৫০ মিনিট</span>
+      </p>
     </section>
   </div>
 </div>
@@ -153,21 +166,32 @@
   function T(h, m) { return h * 60 + m; }
 
   var FLIGHTS = [
-    { name: 'নমুনা ফ্লাইট ১', firstBag: T(9, 38), items: [
+    { name: 'নমুনা ফ্লাইট BG388', firstBag: T(9, 38), items: [
       { no: 'AKE02105BG', s: T(9, 30), e: T(9, 48), p: 4 },
       { no: 'AKE03317BG', s: T(9, 40), e: T(9, 58), p: 3 },
       { no: 'AKH10234BG', s: T(9, 52), e: T(10, 11), p: 3 },
       { no: null, s: T(10, 0), e: T(10, 20), p: 2, review: 'কনটেইনার নম্বর পড়া যায়নি' } ] },
-    { name: 'নমুনা ফ্লাইট ২', firstBag: T(11, 12), items: [
+    { name: 'নমুনা ফ্লাইট BG201', firstBag: T(11, 12), items: [
       { no: 'PMC45012BG', s: T(11, 5), e: T(11, 19), p: 3 },
       { no: 'AKE01988BG', s: T(11, 10), e: T(11, 26), p: 4 },
       { no: 'AKN20456BG', s: T(11, 20), e: T(11, 33), p: 3 } ] },
-    { name: 'নমুনা ফ্লাইট ৩', firstBag: T(13, 50), items: [
+    { name: 'নমুনা ফ্লাইট BG305', firstBag: T(13, 50), items: [
       { no: 'AKE04471BG', s: T(13, 40), e: T(14, 2), p: 3 },
       { no: 'AKH11063BG', s: T(13, 46), e: T(14, 10), p: 3 },
       { no: 'PAG33201BG', s: T(14, 0), e: T(14, 24), p: 2, review: 'কর্মীর সংখ্যা ফ্রেমভেদে ২ থেকে ৫ হয়েছে' },
-      { no: 'AKE05620BG', s: T(14, 8), e: T(14, 31), p: 4 } ] }
+      { no: 'AKE05620BG', s: T(14, 8), e: T(14, 31), p: 4 } ] },
+    { name: 'নমুনা ফ্লাইট BG427', firstBag: T(15, 19), items: [
+      { no: 'AKE06012BG', s: T(15, 10), e: T(15, 30), p: 3 },
+      { no: 'AKH12045BG', s: T(15, 16), e: T(15, 38), p: 3 },
+      { no: 'PMC47320BG', s: T(15, 30), e: T(15, 54), p: 4 } ] },
+    { name: 'নমুনা ফ্লাইট BG512', firstBag: T(17, 33), items: [
+      { no: 'AKE07733BG', s: T(17, 20), e: T(17, 45), p: 4 },
+      { no: 'AKN21890BG', s: T(17, 28), e: T(17, 58), p: 3 },
+      { no: 'PAG34410BG', s: T(17, 40), e: T(18, 10), p: 3 },
+      { no: 'AKE07741BG', s: T(17, 55), e: T(18, 22), p: 2 } ] }
   ];
+  var LIMIT = 50; // মোট ডেলিভারি সময়ের সীমা (মিনিট): নিচে সবুজ, ঠিক সমান কমলা, বেশি হলে লাল
+  function tone(d) { return d > LIMIT ? 'over' : (d === LIMIT ? 'at' : 'under'); }
   FLIGHTS.forEach(function (f) {
     f.start = Math.min.apply(null, f.items.map(function (i) { return i.s; }));
     f.end = Math.max.apply(null, f.items.map(function (i) { return i.e; }));
@@ -248,10 +272,13 @@
     }).join('') : '<li><span>এই সময় পর্যন্ত কোনো ঘটনা নেই</span></li>';
 
     // cross-flight
-    var maxDur = Math.max.apply(null, FLIGHTS.map(function (x) { return x.end - x.start; }));
+    var scale = Math.max(70, Math.max.apply(null, FLIGHTS.map(function (x) { return x.end - x.start; })));
     $('cmp').innerHTML = FLIGHTS.map(function (x, k) {
       var d = x.end - x.start;
-      return '<div class="cmp-row" data-active="' + (k === cur) + '"><span>' + x.name + '</span><div class="cmp-track"><div class="cmp-fill" style="width:' + (d / maxDur * 100).toFixed(1) + '%"></div></div><span class="mono">' + bn(d) + ' মি.</span></div>';
+      return '<div class="cmp-row" data-active="' + (k === cur) + '"><span>' + x.name + '</span>' +
+        '<div class="cmp-track"><div class="cmp-fill ' + tone(d) + '" style="width:' + (d / scale * 100).toFixed(1) + '%"></div>' +
+        '<div class="cmp-limit" style="left:' + (LIMIT / scale * 100).toFixed(1) + '%"></div></div>' +
+        '<span class="mono">' + bn(d) + ' মি.</span></div>';
     }).join('');
   }
 
