@@ -1,0 +1,266 @@
+<title>ব্যাগেজ ডেলিভারি মনিটর</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  /* Layout: ramp-control board. Header, flight tabs, time scrubber, 4 KPI tiles, container timeline, table, event log. */
+  :root {
+    --bg: #f3f5f7;
+    --surface: #ffffff;
+    --ink: #14212e;
+    --muted: #5b6b7a;
+    --line: #d9e0e6;
+    --accent: #e8590c;          /* ramp hi-vis orange: work in progress */
+    --accent-soft: #fde8da;
+    --done: #1b7f6b;
+    --done-soft: #d9f0ea;
+    --review: #c0262d;
+    --review-soft: #fbe3e4;
+    --pending: #8796a5;
+    --pending-soft: #e8edf1;
+    --font-ui: "Hind Siliguri", "Noto Sans Bengali", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1820; --surface: #17232e; --ink: #e8eef3; --muted: #92a3b2; --line: #2a3a48;
+      --accent: #ff8a3d; --accent-soft: #3a2415; --done: #4cc9a8; --done-soft: #14362e;
+      --review: #ff6b72; --review-soft: #3d1b1e; --pending: #7d8f9f; --pending-soft: #223240;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1820; --surface: #17232e; --ink: #e8eef3; --muted: #92a3b2; --line: #2a3a48;
+    --accent: #ff8a3d; --accent-soft: #3a2415; --done: #4cc9a8; --done-soft: #14362e;
+    --review: #ff6b72; --review-soft: #3d1b1e; --pending: #7d8f9f; --pending-soft: #223240;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; line-height: 1.5; padding-inline: 16px; padding-block: 20px 40px; }
+  .wrap { max-width: 1080px; margin-inline: auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 1.5rem; margin: 0; font-weight: 700; text-wrap: balance; }
+  h2 { font-size: 1rem; margin: 0 0 10px; font-weight: 600; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  .banner { background: var(--review-soft); color: var(--review); border: 1px solid var(--review); border-radius: 6px; padding: 10px 14px; font-weight: 600; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tab { font: inherit; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+  .tab[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .tab:focus-visible, input[type=range]:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .scrub { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .clock { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 600; min-width: 5.5ch; }
+  input[type=range] { flex: 1 1 240px; accent-color: var(--accent); min-width: 0; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px; min-width: 0; }
+  .kpi .label { color: var(--muted); font-size: .85rem; }
+  .kpi .value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kpi .note { color: var(--muted); font-size: .85rem; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  /* timeline */
+  .tl { position: relative; display: flex; flex-direction: column; gap: 8px; padding-top: 22px; }
+  .tl-row { display: grid; grid-template-columns: 112px 1fr; gap: 10px; align-items: center; }
+  .tl-name { font-family: var(--font-mono); font-size: .8rem; overflow-wrap: anywhere; }
+  .tl-track { position: relative; height: 26px; background: var(--pending-soft); border-radius: 4px; }
+  .bar { position: absolute; top: 3px; bottom: 3px; border-radius: 3px; background: var(--pending); }
+  .bar.progress { background: var(--accent); }
+  .bar.done { background: var(--done); }
+  .bar.review { outline: 2px solid var(--review); outline-offset: 1px; }
+  .axis { position: absolute; top: 0; left: 122px; right: 0; height: 20px; }
+  .tick { position: absolute; top: 0; font-size: .75rem; color: var(--muted); transform: translateX(-50%); font-family: var(--font-mono); }
+  .now { position: absolute; top: 18px; bottom: 0; width: 2px; background: var(--ink); left: 122px; pointer-events: none; }
+  .tl-inner { position: relative; }
+  /* table */
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 640px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: .85rem; }
+  td.num { font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: .82rem; font-weight: 600; }
+  .pill.done { background: var(--done-soft); color: var(--done); }
+  .pill.progress { background: var(--accent-soft); color: var(--accent); }
+  .pill.pending { background: var(--pending-soft); color: var(--muted); }
+  .pill.review { background: var(--review-soft); color: var(--review); margin-left: 6px; }
+  /* log */
+  .log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .log li { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .log time { font-family: var(--font-mono); color: var(--muted); }
+  .log .warn { color: var(--review); }
+  /* cross-flight bars */
+  .cmp { display: flex; flex-direction: column; gap: 8px; }
+  .cmp-row { display: grid; grid-template-columns: 110px 1fr 70px; gap: 10px; align-items: center; }
+  .cmp-track { background: var(--pending-soft); height: 16px; border-radius: 3px; }
+  .cmp-fill { height: 100%; background: var(--ink); border-radius: 3px; opacity: .8; }
+  .cmp-row[data-active="true"] .cmp-fill { background: var(--accent); opacity: 1; }
+  .two { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+  @media (max-width: 760px) {
+    .two { grid-template-columns: 1fr; }
+    .tl-row { grid-template-columns: 1fr; gap: 2px; }
+    .axis, .now { left: 0; }
+    h1 { font-size: 1.3rem; }
+  }
+  @media (prefers-reduced-motion: no-preference) { .bar { transition: background .2s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ব্যাগেজ ডেলিভারি মনিটর</h1>
+    <p class="sub">এআই-ভিত্তিক ব্যাগেজ ডেলিভারি রিপোর্ট কেমন দেখাবে, তার নমুনা। এই পাতা শুধু রিপোর্টের চেহারা বোঝানোর জন্য।</p>
+  </header>
+  <div class="banner" role="note">নমুনা ডেটা: সব ফ্লাইট, সময় ও সংখ্যা কাল্পনিক। এটি আসল ভিডিও বিশ্লেষণের ফল নয়।</div>
+
+  <div class="tabs" id="tabs" role="group" aria-label="ফ্লাইট নির্বাচন"></div>
+
+  <section class="panel">
+    <div class="scrub">
+      <div>
+        <div class="sub">সময় সরিয়ে দেখুন কোন কনটেইনার কখন কী অবস্থায়</div>
+        <div class="clock" id="clock">--:--</div>
+      </div>
+      <input type="range" id="slider" aria-label="সময়">
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis" aria-live="polite"></section>
+
+  <section class="panel">
+    <h2>কনটেইনারভিত্তিক সময়রেখা</h2>
+    <div class="tl-inner">
+      <div class="tl" id="tl"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>কনটেইনার তালিকা</h2>
+    <div class="scroll"><table id="tbl"></table></div>
+  </section>
+
+  <div class="two">
+    <section class="panel">
+      <h2>ঘটনার লগ (নির্বাচিত সময় পর্যন্ত)</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+    <section class="panel">
+      <h2>ফ্লাইটভিত্তিক মোট ডেলিভারি সময়</h2>
+      <div class="cmp" id="cmp"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  var BN = '০১২৩৪৫৬৭৮৯';
+  function bn(s) { return String(s).replace(/\d/g, function (d) { return BN[d]; }); }
+  function hm(m) { var h = Math.floor(m / 60), mm = m % 60; return bn((h < 10 ? '0' : '') + h + ':' + (mm < 10 ? '0' : '') + mm); }
+  function T(h, m) { return h * 60 + m; }
+
+  var FLIGHTS = [
+    { name: 'নমুনা ফ্লাইট ১', firstBag: T(9, 38), items: [
+      { no: 'CSQU3054383', s: T(9, 30), e: T(9, 48), p: 4 },
+      { no: 'MSKU9070323', s: T(9, 40), e: T(9, 58), p: 3 },
+      { no: 'TCNU1234565', s: T(9, 52), e: T(10, 11), p: 3 },
+      { no: null, s: T(10, 0), e: T(10, 20), p: 2, review: 'কনটেইনার নম্বর পড়া যায়নি' } ] },
+    { name: 'নমুনা ফ্লাইট ২', firstBag: T(11, 12), items: [
+      { no: 'TGHU3456780', s: T(11, 5), e: T(11, 19), p: 3 },
+      { no: 'MRKU6543210', s: T(11, 10), e: T(11, 26), p: 4 },
+      { no: 'APZU1122337', s: T(11, 20), e: T(11, 33), p: 3 } ] },
+    { name: 'নমুনা ফ্লাইট ৩', firstBag: T(13, 50), items: [
+      { no: 'HLXU3456784', s: T(13, 40), e: T(14, 2), p: 3 },
+      { no: 'TGHU9081720', s: T(13, 46), e: T(14, 10), p: 3 },
+      { no: 'MRKU2468102', s: T(14, 0), e: T(14, 24), p: 2, review: 'কর্মীর সংখ্যা ফ্রেমভেদে ২ থেকে ৫ হয়েছে' },
+      { no: 'APZU6543215', s: T(14, 8), e: T(14, 31), p: 4 } ] }
+  ];
+  FLIGHTS.forEach(function (f) {
+    f.start = Math.min.apply(null, f.items.map(function (i) { return i.s; }));
+    f.end = Math.max.apply(null, f.items.map(function (i) { return i.e; }));
+    f.items.forEach(function (i, k) { i.slot = k + 1; });
+  });
+
+  var cur = 0, t = 0;
+  var $ = function (id) { return document.getElementById(id); };
+  function status(i) { return t < i.s ? 'pending' : (t < i.e ? 'progress' : 'done'); }
+  var LABEL = { pending: 'বাকি', progress: 'চলছে', done: 'সম্পন্ন' };
+
+  function pickFlight(k) {
+    cur = k;
+    var f = FLIGHTS[k];
+    var sl = $('slider');
+    sl.min = f.start - 10; sl.max = f.end + 10; sl.step = 1;
+    t = Math.round(f.start + (f.end - f.start) * 0.5);
+    sl.value = t;
+    render();
+  }
+
+  function render() {
+    var f = FLIGHTS[cur];
+    $('clock').textContent = hm(t);
+    Array.prototype.forEach.call($('tabs').children, function (b, k) { b.setAttribute('aria-pressed', k === cur); });
+
+    var done = f.items.filter(function (i) { return status(i) === 'done'; });
+    var prog = f.items.filter(function (i) { return status(i) === 'progress'; });
+    var pend = f.items.filter(function (i) { return status(i) === 'pending'; });
+    var started = t >= f.start, allDone = done.length === f.items.length;
+    var avg = done.length ? Math.round(done.reduce(function (a, i) { return a + (i.e - i.s); }, 0) / done.length * 10) / 10 : null;
+    var total = !started ? null : (allDone ? f.end - f.start : t - f.start);
+
+    $('kpis').innerHTML =
+      kpi('ডেলিভারি শুরু', started ? hm(f.start) : '—', t >= f.firstBag ? 'প্রথম ব্যাগ বেল্টে: ' + hm(f.firstBag) : 'প্রথম ব্যাগ এখনো বেল্টে আসেনি') +
+      kpi('কনটেইনার', bn(done.length) + '/' + bn(f.items.length) + ' সম্পন্ন', bn(prog.length) + 'টি চলছে, ' + bn(pend.length) + 'টি বাকি') +
+      kpi('গড় সময় (সম্পন্নগুলোর)', avg === null ? '—' : bn(avg) + ' মিনিট', 'প্রতি কনটেইনার') +
+      kpi(allDone ? 'ডেলিভারি সমাপ্ত' : 'এ পর্যন্ত সময়', total === null ? '—' : bn(total) + ' মিনিট', allDone ? 'শেষ: ' + hm(f.end) : 'এখনো চলছে');
+
+    // timeline
+    var lo = f.start - 5, hi = f.end + 5, span = hi - lo;
+    function pct(m) { return ((m - lo) / span * 100).toFixed(2) + '%'; }
+    var ticks = '';
+    for (var m = Math.ceil(lo / 10) * 10; m <= hi; m += 10) ticks += '<span class="tick" style="left:' + pct(m) + '">' + hm(m) + '</span>';
+    var rows = f.items.map(function (i) {
+      var st = status(i);
+      var w = ((i.e - i.s) / span * 100).toFixed(2) + '%';
+      return '<div class="tl-row"><div class="tl-name">' + (i.no || 'নম্বর অজানা') + '</div>' +
+        '<div class="tl-track"><div class="bar ' + st + (i.review ? ' review' : '') + '" style="left:' + pct(i.s) + ';width:' + w + '"></div></div></div>';
+    }).join('');
+    $('tl').innerHTML = '<div class="axis">' + ticks + '</div>' + rows +
+      '<div class="now" style="left:calc(122px + (100% - 122px) * ' + ((t - lo) / span).toFixed(4) + ')"></div>';
+
+    // table
+    $('tbl').innerHTML = '<thead><tr><th>স্লট</th><th>কনটেইনার নম্বর</th><th>শুরু</th><th>শেষ</th><th>সময়</th><th>কর্মী (আনুমানিক)</th><th>অবস্থা</th></tr></thead><tbody>' +
+      f.items.map(function (i) {
+        var st = status(i);
+        return '<tr><td class="num">' + bn(i.slot) + '</td>' +
+          '<td class="mono">' + (i.no ? i.no + ' ✔' : '—') + '</td>' +
+          '<td class="num">' + (st === 'pending' ? '—' : hm(i.s)) + '</td>' +
+          '<td class="num">' + (st === 'done' ? hm(i.e) : '—') + '</td>' +
+          '<td class="num">' + (st === 'done' ? bn(i.e - i.s) + ' মিনিট' : '—') + '</td>' +
+          '<td class="num">' + (st === 'pending' ? '—' : bn(i.p)) + '</td>' +
+          '<td><span class="pill ' + st + '">' + LABEL[st] + '</span>' + (i.review && st !== 'pending' ? '<span class="pill review">রিভিউ দরকার</span>' : '') + '</td></tr>';
+      }).join('') + '</tbody>';
+
+    // log
+    var ev = [{ m: f.firstBag, tx: 'বেল্টে প্রথম ব্যাগ শনাক্ত' }];
+    f.items.forEach(function (i) {
+      var n = i.no || 'কনটেইনার (নম্বর অজানা)';
+      ev.push({ m: i.s, tx: 'স্লট ' + bn(i.slot) + ': ' + n + ' থেকে ডেলিভারি শুরু, কর্মী ' + bn(i.p) + ' (আনুমানিক)' });
+      if (i.review) ev.push({ m: i.s + 1, tx: 'স্লট ' + bn(i.slot) + ': ' + i.review + ' → মানুষের রিভিউয়ের জন্য চিহ্নিত', warn: true });
+      ev.push({ m: i.e, tx: 'স্লট ' + bn(i.slot) + ': ' + n + ' ডেলিভারি সম্পন্ন' });
+    });
+    ev = ev.filter(function (e) { return e.m <= t; }).sort(function (a, b) { return b.m - a.m; });
+    $('log').innerHTML = ev.length ? ev.map(function (e) {
+      return '<li><time>' + hm(e.m) + '</time><span' + (e.warn ? ' class="warn"' : '') + '>' + e.tx + '</span></li>';
+    }).join('') : '<li><span>এই সময় পর্যন্ত কোনো ঘটনা নেই</span></li>';
+
+    // cross-flight
+    var maxDur = Math.max.apply(null, FLIGHTS.map(function (x) { return x.end - x.start; }));
+    $('cmp').innerHTML = FLIGHTS.map(function (x, k) {
+      var d = x.end - x.start;
+      return '<div class="cmp-row" data-active="' + (k === cur) + '"><span>' + x.name + '</span><div class="cmp-track"><div class="cmp-fill" style="width:' + (d / maxDur * 100).toFixed(1) + '%"></div></div><span class="mono">' + bn(d) + ' মি.</span></div>';
+    }).join('');
+  }
+
+  function kpi(label, value, note) {
+    return '<div class="kpi"><div class="label">' + label + '</div><div class="value">' + value + '</div><div class="note">' + note + '</div></div>';
+  }
+
+  $('tabs').innerHTML = FLIGHTS.map(function (f, k) { return '<button class="tab" type="button" data-k="' + k + '">' + f.name + '</button>'; }).join('');
+  $('tabs').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) pickFlight(+b.getAttribute('data-k')); });
+  $('slider').addEventListener('input', function (e) { t = +e.target.value; render(); });
+  pickFlight(0);
+})();
+</script>
