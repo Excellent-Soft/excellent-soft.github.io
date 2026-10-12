@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from . import iso6346
+from . import iso6346, uld
 from .aggregator import Aggregator
 from .analyzer import Analyzer
 from .db import Database
@@ -26,6 +26,8 @@ def run(
     max_frames: int | None = None,
     evidence_dir: str | None = "evidence",
     aggregator: Aggregator | None = None,
+    id_scheme: str = "uld",
+    owners: set[str] | None = None,
 ) -> list[DeliveryReport]:
     """ভিডিও (বা স্ট্রিম) -> ফ্রেম -> বিশ্লেষণ -> যাচাই -> সেশন -> ডাটাবেজ।
 
@@ -53,11 +55,16 @@ def run(
             if s.slot in seen:  # একই slot দুইবার এলে প্রথমটি রাখা হয়
                 continue
             seen.add(s.slot)
-            norm = iso6346.normalize(s.container_number_raw)
+            if id_scheme == "iso6346":
+                norm = iso6346.normalize(s.container_number_raw)
+                ok = bool(norm) and iso6346.is_valid(norm)
+            else:  # "uld": বিমানের কনটেইনার (ফরম্যাট + মালিক-কোড যাচাই, check digit নেই)
+                norm = uld.normalize(s.container_number_raw)
+                ok = bool(norm) and uld.is_valid(norm, owners)
             obs = Observation(
                 frame_index=frame.index, time_s=frame.time_s, captured_at=captured_at, slot=s.slot,
                 container_raw=s.container_number_raw, container_norm=norm,
-                check_ok=bool(norm) and iso6346.is_valid(norm),
+                check_ok=ok,
                 door_open=s.door_open, unloading=s.baggage_being_unloaded,
                 people=max(0, s.people_count), confidence=s.confidence, notes=s.notes,
             )

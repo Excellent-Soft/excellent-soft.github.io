@@ -114,7 +114,7 @@ class Aggregator:
         elif s.invalid_votes:
             number, _ = s.invalid_votes.most_common(1)[0]
             valid = False
-            reasons.append("পড়া নম্বরের check digit মেলেনি (OCR ভুল হতে পারে)")
+            reasons.append("পড়া নম্বরের ফরম্যাট বা মালিক-কোড মেলেনি (পড়ায় ভুল হতে পারে)")
         else:
             number, valid = None, False
             reasons.append("কনটেইনার নম্বর পড়া যায়নি")

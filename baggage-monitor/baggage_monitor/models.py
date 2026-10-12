@@ -11,7 +11,7 @@ class SlotObservation(BaseModel):
 
     slot: int = Field(description="বাঁ থেকে ডানে কনটেইনারের ক্রম, ১ থেকে শুরু")
     container_number_raw: str | None = Field(
-        description="কনটেইনারের গায়ে স্পষ্ট পড়া যাচ্ছে এমন নম্বর হুবহু; পড়া না গেলে null"
+        description="কনটেইনারের গায়ে স্পষ্ট পড়া যাচ্ছে এমন আইডি হুবহু (যেমন AKE02105BG); পড়া না গেলে null"
     )
     door_open: bool = Field(description="কনটেইনারের দরজা খোলা কিনা")
     baggage_being_unloaded: bool = Field(

@@ -128,8 +128,9 @@
   </section>
 
   <section class="panel">
-    <h2>কনটেইনার তালিকা</h2>
+    <h2>কনটেইনার (ULD) তালিকা</h2>
     <div class="scroll"><table id="tbl"></table></div>
+    <p class="sub">✔ = আইডির ফরম্যাট ও এয়ারলাইন-কোড (BG) মিলেছে। ULD আইডিতে check digit নেই, তাই লোড তালিকার সঙ্গে মিলানোও জরুরি।</p>
   </section>
 
   <div class="two">
@@ -153,19 +154,19 @@
 
   var FLIGHTS = [
     { name: 'নমুনা ফ্লাইট ১', firstBag: T(9, 38), items: [
-      { no: 'CSQU3054383', s: T(9, 30), e: T(9, 48), p: 4 },
-      { no: 'MSKU9070323', s: T(9, 40), e: T(9, 58), p: 3 },
-      { no: 'TCNU1234565', s: T(9, 52), e: T(10, 11), p: 3 },
+      { no: 'AKE02105BG', s: T(9, 30), e: T(9, 48), p: 4 },
+      { no: 'AKE03317BG', s: T(9, 40), e: T(9, 58), p: 3 },
+      { no: 'AKH10234BG', s: T(9, 52), e: T(10, 11), p: 3 },
       { no: null, s: T(10, 0), e: T(10, 20), p: 2, review: 'কনটেইনার নম্বর পড়া যায়নি' } ] },
     { name: 'নমুনা ফ্লাইট ২', firstBag: T(11, 12), items: [
-      { no: 'TGHU3456780', s: T(11, 5), e: T(11, 19), p: 3 },
-      { no: 'MRKU6543210', s: T(11, 10), e: T(11, 26), p: 4 },
-      { no: 'APZU1122337', s: T(11, 20), e: T(11, 33), p: 3 } ] },
+      { no: 'PMC45012BG', s: T(11, 5), e: T(11, 19), p: 3 },
+      { no: 'AKE01988BG', s: T(11, 10), e: T(11, 26), p: 4 },
+      { no: 'AKN20456BG', s: T(11, 20), e: T(11, 33), p: 3 } ] },
     { name: 'নমুনা ফ্লাইট ৩', firstBag: T(13, 50), items: [
-      { no: 'HLXU3456784', s: T(13, 40), e: T(14, 2), p: 3 },
-      { no: 'TGHU9081720', s: T(13, 46), e: T(14, 10), p: 3 },
-      { no: 'MRKU2468102', s: T(14, 0), e: T(14, 24), p: 2, review: 'কর্মীর সংখ্যা ফ্রেমভেদে ২ থেকে ৫ হয়েছে' },
-      { no: 'APZU6543215', s: T(14, 8), e: T(14, 31), p: 4 } ] }
+      { no: 'AKE04471BG', s: T(13, 40), e: T(14, 2), p: 3 },
+      { no: 'AKH11063BG', s: T(13, 46), e: T(14, 10), p: 3 },
+      { no: 'PAG33201BG', s: T(14, 0), e: T(14, 24), p: 2, review: 'কর্মীর সংখ্যা ফ্রেমভেদে ২ থেকে ৫ হয়েছে' },
+      { no: 'AKE05620BG', s: T(14, 8), e: T(14, 31), p: 4 } ] }
   ];
   FLIGHTS.forEach(function (f) {
     f.start = Math.min.apply(null, f.items.map(function (i) { return i.s; }));

@@ -28,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--model", default=None, help=f"ডিফল্ট {DEFAULT_MODEL} (বা CLAUDE_MODEL env)")
     a.add_argument("--no-fallback", action="store_true", help="server-side refusal fallback বন্ধ")
     a.add_argument("--evidence-dir", default="evidence")
+    a.add_argument("--id-scheme", choices=["uld", "iso6346"], default="uld",
+                   help="কনটেইনার আইডির ধরন: uld (বিমান, ডিফল্ট) বা iso6346 (সমুদ্রপথ)")
+    a.add_argument("--owner", action="append", default=None, metavar="CODE",
+                   help="গ্রহণযোগ্য এয়ারলাইন মালিক-কোড, যেমন BG (একাধিকবার দেওয়া যায়); দিলে অন্য কোডের নম্বর রিভিউতে যায়")
     a.add_argument("--mock", action="store_true", help="Claude ছাড়া বানানো ডেটায় পাইপলাইন পরীক্ষা (API খরচ নেই)")
 
     r = sub.add_parser("report", help="সেভ করা রিপোর্ট দেখা")
@@ -50,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.mock:
         analyzer, model = MockAnalyzer(args.slots), "mock"
     else:
-        analyzer = ClaudeAnalyzer(args.slots, args.model, fallback=not args.no_fallback)
+        analyzer = ClaudeAnalyzer(args.slots, args.model, fallback=not args.no_fallback, id_scheme=args.id_scheme)
         model = analyzer.model
     print(f"ভিডিও {duration:.0f}s, fps {fps:.0f}; মডেল {model}; প্রায় {n_frames}টি ফ্রেম পাঠানো হবে "
           f"(সীমা {args.max_frames})", file=sys.stderr)
@@ -59,7 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     run_id = db.start_run(args.video, model, args.interval, args.slots)
     reports = run(args.video, analyzer, db, run_id, interval_s=args.interval, start_time=start_time,
                   start_s=args.start, end_s=args.end, max_frames=args.max_frames,
-                  evidence_dir=args.evidence_dir)
+                  evidence_dir=args.evidence_dir, id_scheme=args.id_scheme,
+                  owners={o.upper() for o in args.owner} if args.owner else None)
     if hasattr(analyzer, "input_tokens"):
         print(f"টোকেন: ইনপুট {analyzer.input_tokens}, আউটপুট {analyzer.output_tokens}", file=sys.stderr)
     print(f"রান #{run_id}: {len(reports)}টি ডেলিভারি রিপোর্ট সেভ হয়েছে -> {args.db}", file=sys.stderr)

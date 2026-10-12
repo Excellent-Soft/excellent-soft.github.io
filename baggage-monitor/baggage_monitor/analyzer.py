@@ -20,13 +20,19 @@ class Analyzer(Protocol):
     def analyze(self, jpeg: bytes) -> FrameAnalysis | None: ...
 
 
-def build_prompt(num_slots: int) -> str:
+ID_HINTS = {
+    "uld": "বিমানের ULD আইডি: ৩ অক্ষরের টাইপ কোড + ৪-৫ অঙ্কের সিরিয়াল + ২ অক্ষরের এয়ারলাইন কোড, যেমন AKE 02105 BG",
+    "iso6346": "ISO 6346: ৪টি অক্ষর + ৬টি অঙ্ক + ১টি check digit, যেমন CSQU 305438 3",
+}
+
+
+def build_prompt(num_slots: int, id_scheme: str = "uld") -> str:
     return f"""এটি একটি স্থির ক্যামেরার ফ্রেম। ক্যামেরায় {num_slots}টি কনটেইনার থেকে ব্যাগেজ নামানোর কাজ দেখা যায়।
 কনটেইনারগুলোকে ফ্রেমে বাঁ থেকে ডানে slot 1 থেকে slot {num_slots} ধরো। প্রতিটি slot-এর জন্য ঠিক একটি এন্ট্রি দাও
 (কনটেইনার দেখা না গেলেও), এবং ফ্রেমে যা দেখছ শুধু তা-ই রিপোর্ট করো।
 
 নিয়ম:
-- container_number_raw: কনটেইনারের গায়ে লেখা নম্বর (ISO 6346: ৪টি অক্ষর + ৬টি অঙ্ক + ১টি check digit, যেমন CSQU 305438 3)
+- container_number_raw: কনটেইনারের গায়ে লেখা নম্বর ({ID_HINTS[id_scheme]})
   যেটুকু স্পষ্ট পড়া যাচ্ছে হুবহু লেখো। অস্পষ্ট বা আংশিক দেখা গেলে অনুমান করে পূর্ণ করবে না; null দাও।
 - baggage_being_unloaded: true শুধু তখনই যখন ওই কনটেইনার থেকে কেউ ব্যাগ ধরে/বহন করছে বা কনভেয়ারে তুলছে। দরজা খোলা অথচ কেউ কাজ করছে না হলে false।
 - people_count: যারা স্পষ্টভাবে ওই কনটেইনারের কাজে যুক্ত শুধু তাদের গোনো; পথচারী বা দূরের মানুষ বাদ।
@@ -35,10 +41,10 @@ def build_prompt(num_slots: int) -> str:
 
 
 class ClaudeAnalyzer:
-    def __init__(self, num_slots: int, model: str | None = None, fallback: bool = True):
+    def __init__(self, num_slots: int, model: str | None = None, fallback: bool = True, id_scheme: str = "uld"):
         self.client = anthropic.Anthropic()  # ANTHROPIC_API_KEY বা `ant auth login` থেকে
         self.model = model or os.environ.get("CLAUDE_MODEL", DEFAULT_MODEL)
-        self.prompt = build_prompt(num_slots)
+        self.prompt = build_prompt(num_slots, id_scheme)
         self.fallback = fallback
         self.input_tokens = 0
         self.output_tokens = 0
@@ -96,7 +102,7 @@ class MockAnalyzer:
         from .models import SlotObservation
 
         n, self.n = self.n, self.n + 1
-        numbers = ["CSQU3054383", "MSKU9070323", None, "TCNU1234565"]
+        numbers = ["AKE02105BG", "AKH10234BG", None, "PMC45012BG"]
         slots = []
         for s in range(1, self.num_slots + 1):
             active = 2 <= n <= 8 and s % 2 == 1
