@@ -1,0 +1,49 @@
+# ব্যাগেজ ডেলিভারি মনিটর (প্রোটোটাইপ)
+
+রেকর্ড করা ভিডিও থেকে ব্যাগেজ ডেলিভারির তথ্য বের করে ডাটাবেজে রিপোর্ট সেভ করে:
+**কনটেইনার নম্বর, ডেলিভারি শুরু ও শেষের সময়, কতজন মানুষ কাজ করেছে।**
+
+## কীভাবে কাজ করে
+```
+ভিডিও → প্রতি N সেকেন্ডে একটি ফ্রেম (OpenCV) → Claude vision (structured JSON)
+      → ISO 6346 check digit যাচাই → একাধিক ফ্রেম মিলিয়ে সেশন (শুরু/শেষ/মানুষ)
+      → SQLite (observations + delivery_reports) + প্রমাণ-ছবি (evidence/)
+```
+- ক্যামেরা স্থির ধরা হয়েছে; কনটেইনারগুলো ফ্রেমে বাঁ থেকে ডানে `slot 1..N`।
+- এক ফ্রেমের ভুলে রিপোর্ট বদলায় না: শুরু ধরতে পরপর ২টি active ফ্রেম, শেষ ধরতে পরপর ৩টি inactive ফ্রেম লাগে।
+- কনটেইনার নম্বর ISO 6346 check digit মিললে ✔; না মিললে রিপোর্টে `needs_review` ও কারণ থাকে।
+- সব raw পর্যবেক্ষণ `observations` টেবিলে থাকে, তাই পরে নিয়ম বদলে আবার হিসাব করা যায়।
+
+## চালানো
+```bash
+cd baggage-monitor
+python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...                    # Windows: set ANTHROPIC_API_KEY=...
+
+# API খরচ ছাড়া পাইপলাইন পরীক্ষা (বানানো ডেটা; আসল বিশ্লেষণ নয়)
+python -m baggage_monitor analyze video.mp4 --mock
+
+# আসল বিশ্লেষণ; প্রথমে ছোট অংশ দিয়ে দেখুন
+python -m baggage_monitor analyze video.mp4 --start 0 --end 120 --interval 3 \
+    --start-time 2026-10-12T09:30:00+06:00
+
+python -m baggage_monitor report            # সেভ করা রিপোর্ট
+python -m baggage_monitor report --json
+pytest                                      # ইউনিট টেস্ট
+```
+গুরুত্বপূর্ণ অপশন: `--slots` (ডিফল্ট ৪), `--interval`, `--max-frames` (ডিফল্ট ২০০, খরচের নিরাপত্তা-সীমা),
+`--model` / `CLAUDE_MODEL` (ডিফল্ট `claude-opus-5-5`; সস্তা ও দ্রুত চাইলে `claude-haiku-5-5` বা `claude-sonnet-5-5`)।
+`--start-time` না দিলে এখনকার সময় থেকে হিসাব হয়, তাই পুরোনো ভিডিওর জন্য ভিডিওর আসল শুরুর সময় দিন।
+
+## জেনে রাখুন (সীমাবদ্ধতা)
+- **মানুষ গোনা অনুমান-ভিত্তিক।** Claude ফ্রেমভেদে একই মানুষকে ট্র্যাক করে না। রিপোর্টে `people_peak` ও `people_median` আছে;
+  সংখ্যা বেশি ওঠানামা করলে `needs_review` হয়। নির্ভুল গণনা দরকার হলে YOLO + tracker যোগ করুন (`pipeline.py`-তে `people` বসানোর জায়গা)।
+- **কনটেইনার নম্বর** পড়তে নম্বরসহ অংশ স্পষ্ট ও যথেষ্ট বড় দেখা যেতে হবে। পড়া না গেলে অনুমান করা হয় না, `null` আসে।
+- একটি স্লটে একটি সক্রিয় সময়-খণ্ড = একটি রিপোর্ট। একই স্লটে মাঝপথে কনটেইনার বদলালে আলাদা রিপোর্ট হবে না (ভবিষ্যতের কাজ)।
+- সার্ভার-সাইড refusal fallback ডিফল্টে চালু (`--no-fallback` দিয়ে বন্ধ)।
+- এটি প্রোটোটাইপ: আপনার আসল ফুটেজে নির্ভুলতা মেপে নিন (কয়েকটি ভিডিওর রিপোর্ট হাতে মিলিয়ে)।
+
+## লাইভ ক্যামেরায় নেওয়ার ধাপ
+`frames.sample_frames(source)` ফাংশন ফাইলের বদলে RTSP URL-ও নেয় (`cv2.VideoCapture`); মূল পরিবর্তন লাগবে শুধু
+দীর্ঘস্থায়ী লুপ, পুনঃসংযোগ, ও ফ্রেমের আসল সময় ব্যবহার। বাকি অংশ (analyzer, aggregator, db) একই থাকবে।
