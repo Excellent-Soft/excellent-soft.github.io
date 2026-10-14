@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ULD Dolly Bay Report – HSIA Dhaka</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1c2430;--mute:#667085;--line:#e3e7ee;--pri:#0b5cad}
+@media(prefers-color-scheme:dark){:root{--bg:#10151c;--card:#19212b;--ink:#e8edf3;--mute:#9aa6b5;--line:#2a3441;--pri:#4b9bea}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,"Noto Sans Bengali",sans-serif}
+header{padding:14px 16px;background:var(--pri);color:#fff}header h1{margin:0;font-size:18px}header small{opacity:.85}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+label{font-size:13px;color:var(--mute)}
+input,select,button{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+button{cursor:pointer}button.p{background:var(--pri);color:#fff;border-color:var(--pri)}
+canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:8px;background:#fff;display:block}
+.mute{color:var(--mute);font-size:13px}
+table{border-collapse:collapse;width:100%}td,th{padding:6px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}
+</style>
+</head>
+<body>
+<header><h1>ULD ডলি – বে-ভিত্তিক শিফট রিপোর্ট</h1><small>HSIA ঢাকা · নমুনা ডেটা দিয়ে ডিজাইন (প্রকৃত ডেটা নয়)</small></header>
+<main>
+<div class="card">
+ <div class="row">
+  <div><label>তারিখ<br><input type="date" id="date"></label></div>
+  <div><label>শিফট<br><select id="shift">
+   <option value="0">শিফট ১ (০৬:০০–১৪:০০)</option>
+   <option value="1">শিফট ২ (১৪:০০–২২:০০)</option>
+   <option value="2">শিফট ৩ (২২:০০–০৬:০০)</option></select></label></div>
+  <div><label>ম্যাপ ইমেজ (ঐচ্ছিক)<br><input type="file" id="map" accept="image/*"></label></div>
+  <div><label>শিডিউল CSV<br><input type="file" id="csv" accept=".csv"></label></div>
+ </div>
+ <div class="row">
+  <button class="p" id="dl">PNG ডাউনলোড</button>
+  <button id="edit">বে-এর অবস্থান ঠিক করুন</button>
+  <select id="bayPick" hidden></select>
+  <button id="resetPos">অবস্থান রিসেট</button>
+ </div>
+ <div class="mute" id="hint">ম্যাপ ইমেজ না দিলে সাধারণ স্কিম্যাটিক এপ্রন দেখানো হবে। প্রকৃত স্যাটেলাইট/অফিসিয়াল ম্যাপ দিলে "বে-এর অবস্থান ঠিক করুন" চেপে বে বেছে ম্যাপে ক্লিক করুন।</div>
+</div>
+<div class="card"><canvas id="cv" width="1600" height="1250"></canvas></div>
+<div class="card"><div class="mute">CSV কলাম (হেডারসহ): <code>bay,flight,airline,aircraft,placed,first_place,last_place</code> – সময় HH:MM ফরম্যাটে। প্রয়োজন বিমানের ধরন থেকে হিসাব হয় (নিচের টেবিল, নমুনা মান – আপনার প্রকৃত মান দিলে বদলে দেব)।</div>
+<table id="req"></table></div>
+</main>
+<script>
+const SHIFTS=[['শিফট ১','06:00','14:00'],['শিফট ২','14:00','22:00'],['শিফট ৩','22:00','06:00']];
+const SHIFT_EN=['Shift 1','Shift 2','Shift 3'];
+// প্লেসহোল্ডার: বিমানের ধরন অনুযায়ী প্রয়োজনীয় ULD ডলি (প্রকৃত মান দিয়ে বদলাতে হবে)
+const REQ={B777:10,B787:8,A330:8,A321:5,A320:4,B737:4,DH8:2};
+const BAYS=['A1','A2','A3','A4','A5','A6','B1','B2','B3','B4','B5','B6'];
+const AIRL=[['BG','Biman'],['EK','Emirates'],['QR','Qatar'],['SQ','Singapore'],['TK','Turkish'],['US','US-Bangla'],['BS','Novoair']];
+const TYPES=Object.keys(REQ);
+const POSKEY='hsia-bay-pos-v1';
+const $=s=>document.querySelector(s);
+let pos=loadPos(),rows=[],bg=null,editing=false;
+
+function loadPos(){try{const p=JSON.parse(localStorage.getItem(POSKEY));if(p)return p}catch(e){}return{}}
+function savePos(){try{localStorage.setItem(POSKEY,JSON.stringify(pos))}catch(e){}}
+function defPos(b){const i=BAYS.indexOf(b),r=i<6?0:1,c=i%6;return{x:.08+c*.168,y:r?.62:.3}}
+const P=b=>pos[b]||defPos(b);
+
+function rng(seed){let s=seed>>>0;return()=>((s=(s*1664525+1013904223)>>>0)/4294967296)}
+const hm=m=>String(Math.floor(((m%1440)+1440)%1440/60)).padStart(2,'0')+':'+String(((m%60)+60)%60).padStart(2,'0');
+const toMin=t=>{const[a,b]=t.split(':').map(Number);return a*60+b};
+
+function sample(date,sh){
+  const r=rng(parseInt(date.replace(/-/g,''))*7+sh*131+3),start=toMin(SHIFTS[sh][1]),out=[];
+  BAYS.forEach(b=>{
+    if(r()<.15)return; // কিছু বে খালি
+    const al=AIRL[Math.floor(r()*AIRL.length)],ty=TYPES[Math.floor(r()*TYPES.length)];
+    const req=REQ[ty],sta=start+Math.floor(r()*380)+20;
+    const placed=Math.max(0,Math.round(req*(.45+r()*.65)));
+    const first=sta+5+Math.floor(r()*20),last=first+Math.floor(r()*25)+5;
+    out.push({bay:b,flight:al[0]+String(100+Math.floor(r()*880)),airline:al[1],aircraft:ty,sta:hm(sta),placed,first:hm(first),last:hm(last)});
+  });
+  return out;
+}
+function analyse(r){r.forEach(x=>{x.req=REQ[x.aircraft]||0;x.short=Math.max(0,x.req-x.placed);x.extra=Math.max(0,x.placed-x.req)});return r}
+
+function parseCsv(t){
+  const L=t.trim().split(/\r?\n/).map(l=>l.split(',').map(s=>s.trim()));const h=L.shift().map(s=>s.toLowerCase());
+  const ix=k=>h.indexOf(k);if(ix('bay')<0||ix('flight')<0)throw new Error('bay/flight কলাম নেই');
+  return L.filter(c=>c[ix('bay')]).map(c=>({bay:c[ix('bay')].toUpperCase(),flight:c[ix('flight')]||'',airline:c[ix('airline')]||'',aircraft:(c[ix('aircraft')]||'').toUpperCase(),sta:c[ix('sta')]||'',placed:+c[ix('placed')]||0,first:c[ix('first_place')]||'—',last:c[ix('last_place')]||'—'}));
+}
+
+function draw(){
+  const cv=$('#cv'),g=cv.getContext('2d'),W=cv.width,H=cv.height;
+  const d=$('#date').value,sh=+$('#shift').value;
+  g.fillStyle='#fff';g.fillRect(0,0,W,H);
+  // header
+  g.fillStyle='#0b5cad';g.fillRect(0,0,W,90);
+  g.fillStyle='#fff';g.font='bold 34px sans-serif';g.fillText('ULD Dolly Placement Report – HSIA Dhaka',30,45);
+  g.font='20px sans-serif';g.fillText(`${d}   ·   ${SHIFT_EN[sh]} (${SHIFTS[sh][1]}–${SHIFTS[sh][2]})   ·   SAMPLE DATA`,30,75);
+  // KPIs
+  const tp=rows.reduce((a,x)=>a+x.placed,0),tr=rows.reduce((a,x)=>a+x.req,0),ts=rows.reduce((a,x)=>a+x.short,0),short=rows.filter(x=>x.short>0).length;
+  const k=[['Flights',rows.length],['Dollies placed',tp],['Required',tr],['Shortage',ts],['Bays short',short]];
+  k.forEach((v,i)=>{const x=30+i*312;g.fillStyle='#f1f4f8';g.fillRect(x,105,290,80);g.fillStyle='#667085';g.font='18px sans-serif';g.fillText(v[0],x+14,133);
+    g.fillStyle=v[0]==='Shortage'&&v[1]>0?'#c0392b':'#1c2430';g.font='bold 36px sans-serif';g.fillText(String(v[1]),x+14,172)});
+  // map area
+  const mx=30,my=205,mw=W-60,mh=640;
+  if(bg){const s=Math.max(mw/bg.width,mh/bg.height),sw=mw/s,sh2=mh/s;g.drawImage(bg,(bg.width-sw)/2,(bg.height-sh2)/2,sw,sh2,mx,my,mw,mh)}
+  else{g.fillStyle='#dfe5ec';g.fillRect(mx,my,mw,mh);g.fillStyle='#c9d1db';g.fillRect(mx,my+mh*.47,mw,mh*.06);
+    g.fillStyle='#9aa6b5';g.font='16px sans-serif';g.fillText('Schematic apron (upload a map image to replace)',mx+12,my+mh-12)}
+  g.strokeStyle='#9aa6b5';g.strokeRect(mx,my,mw,mh);
+  BAYS.forEach(b=>{
+    const p=P(b),x=mx+p.x*mw,y=my+p.y*mh,r=rows.find(q=>q.bay===b),w=170,h=r?118:46;
+    const col=!r?'#8b95a3':r.short===0?'#188a4a':r.short/r.req<=.25?'#c27803':'#c0392b';
+    g.fillStyle='rgba(255,255,255,.93)';g.fillRect(x-w/2,y-h/2,w,h);g.strokeStyle=col;g.lineWidth=4;g.strokeRect(x-w/2,y-h/2,w,h);g.lineWidth=1;
+    g.fillStyle=col;g.fillRect(x-w/2,y-h/2,w,26);g.fillStyle='#fff';g.font='bold 17px sans-serif';g.fillText('Bay '+b+(r?'  '+r.flight:''),x-w/2+8,y-h/2+19);
+    g.fillStyle='#1c2430';g.font='14px sans-serif';
+    if(!r){g.fillText('No flight',x-w/2+8,y+14)}
+    else{const t=[`${r.airline} · ${r.aircraft}`,`Placed ${r.first}–${r.last}`,`Placed ${r.placed} / Need ${r.req}`,r.short?`SHORT ${r.short}`:(r.extra?`Surplus +${r.extra}`:'OK')];
+      t.forEach((s,i)=>{g.font=i===3?'bold 15px sans-serif':'14px sans-serif';g.fillStyle=i===3&&r.short?'#c0392b':'#1c2430';g.fillText(s,x-w/2+8,y-h/2+46+i*21)})}
+  });
+  // legend
+  [['#188a4a','Met'],['#c27803','Short ≤25%'],['#c0392b','Short >25%'],['#8b95a3','No flight']].forEach((l,i)=>{g.fillStyle=l[0];g.fillRect(mx+10+i*170,my+10,16,16);g.fillStyle='#1c2430';g.font='15px sans-serif';g.fillText(l[1],mx+32+i*170,my+23)});
+  // table
+  let ty=my+mh+40;g.font='bold 16px sans-serif';g.fillStyle='#667085';
+  const cols=[30,110,240,420,540,650,790,930,1060];['Bay','Flight','Airline','Type','STA','First place','Last place','Placed/Need','Shortage'].forEach((c,i)=>g.fillText(c,cols[i],ty));
+  g.strokeStyle='#e3e7ee';g.beginPath();g.moveTo(30,ty+8);g.lineTo(W-30,ty+8);g.stroke();
+  const maxRows=Math.floor((H-ty-20)/26);
+  rows.slice(0,maxRows).forEach((r,i)=>{const y=ty+34+i*26;g.font='15px sans-serif';g.fillStyle='#1c2430';
+    [r.bay,r.flight,r.airline,r.aircraft,r.sta||'—',r.first,r.last,`${r.placed}/${r.req}`].forEach((v,j)=>g.fillText(String(v),cols[j],y));
+    g.fillStyle=r.short?'#c0392b':'#188a4a';g.font='bold 15px sans-serif';g.fillText(r.short?'-'+r.short:'0',cols[8],y)});
+}
+function refresh(){rows=analyse(csvRows||sample($('#date').value,+$('#shift').value));draw()}
+let csvRows=null;
+$('#date').value=new Date().toISOString().slice(0,10);
+$('#date').onchange=$('#shift').onchange=()=>{csvRows=null;refresh()};
+$('#map').onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{bg=im;draw()};im.src=URL.createObjectURL(f)};
+$('#csv').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>{try{csvRows=parseCsv(t);refresh()}catch(x){alert('CSV ত্রুটি: '+x.message)}})};
+$('#dl').onclick=()=>{const a=document.createElement('a');a.download=`uld-report-${$('#date').value}-shift${+$('#shift').value+1}.png`;a.href=$('#cv').toDataURL('image/png');a.click()};
+const pick=$('#bayPick');pick.innerHTML=BAYS.map(b=>`<option>${b}</option>`).join('');
+$('#edit').onclick=()=>{editing=!editing;pick.hidden=!editing;$('#edit').textContent=editing?'অবস্থান ঠিক করা শেষ':'বে-এর অবস্থান ঠিক করুন'};
+$('#cv').onclick=e=>{if(!editing)return;const cv=$('#cv'),r=cv.getBoundingClientRect(),sx=cv.width/r.width;
+  const x=(e.clientX-r.left)*sx,y=(e.clientY-r.top)*sx,mx=30,my=205,mw=cv.width-60,mh=640;
+  if(x<mx||x>mx+mw||y<my||y>my+mh)return;pos[pick.value]={x:(x-mx)/mw,y:(y-my)/mh};savePos();
+  pick.selectedIndex=(pick.selectedIndex+1)%BAYS.length;draw()};
+$('#resetPos').onclick=()=>{pos={};savePos();draw()};
+$('#req').innerHTML='<tr><th>বিমান</th><th>প্রয়োজনীয় ডলি (নমুনা)</th></tr>'+TYPES.map(t=>`<tr><td>${t}</td><td>${REQ[t]}</td></tr>`).join('');
+refresh();
+</script>
+</body>
+</html>
