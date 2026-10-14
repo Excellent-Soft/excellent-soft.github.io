@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trolley Management – HSIA Dhaka</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1c2430;--mute:#667085;--line:#e3e7ee;--pri:#0b5cad;--ok:#188a4a;--warn:#c27803;--bad:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#10151c;--card:#19212b;--ink:#e8edf3;--mute:#9aa6b5;--line:#2a3441;--pri:#4b9bea;--ok:#3fb56f;--warn:#e0a030;--bad:#ee6b5b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,"Noto Sans Bengali",sans-serif}
+header{padding:14px 16px;background:var(--pri);color:#fff}
+header h1{margin:0;font-size:18px}header small{opacity:.85}
+nav{display:flex;gap:4px;overflow-x:auto;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+nav button{flex:none;border:0;background:none;color:var(--mute);padding:8px 12px;border-radius:8px;font:inherit;cursor:pointer}
+nav button.on{background:var(--pri);color:#fff}
+main{max-width:980px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:16px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.stat b{display:block;font-size:26px}.stat span{color:var(--mute);font-size:13px}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--mute);font-weight:600;font-size:13px}
+.tblwrap{overflow-x:auto}
+input,select,button.btn{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+button.btn{cursor:pointer;background:var(--pri);color:#fff;border-color:var(--pri)}
+button.btn.sec{background:var(--card);color:var(--ink);border-color:var(--line)}
+button.btn.bad{background:var(--bad);border-color:var(--bad)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;color:#fff}
+.t-ok{background:var(--ok)}.t-warn{background:var(--warn)}.t-bad{background:var(--bad)}.t-mute{background:var(--mute)}
+.bar{height:8px;background:var(--line);border-radius:9px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}
+.alert{border-left:4px solid var(--warn);background:var(--card);padding:8px 12px;margin-bottom:8px;border-radius:6px}
+.alert.bad{border-color:var(--bad)}
+#reader{max-width:360px;margin:8px 0}
+.labels{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.label{border:1px dashed var(--mute);border-radius:8px;padding:8px;text-align:center;background:#fff;color:#000;break-inside:avoid}
+.label svg,.label img{width:110px;height:110px}.label b{display:block}
+.mute{color:var(--mute)}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:8px;display:none;max-width:90%}
+@media print{header,nav,.noprint,.card:not(#printArea){display:none!important}body{background:#fff}}
+</style>
+</head>
+<body>
+<header><h1>ট্রলি ম্যানেজমেন্ট সিস্টেম</h1><small>হযরত শাহজালাল আন্তর্জাতিক বিমানবন্দর, ঢাকা · QR ট্র্যাকিং</small></header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+const KEY='hsia-trolley-v1';
+const STATUS={AVAILABLE:'available',INUSE:'inuse',MAINT:'maintenance'};
+const STATUS_BN={available:'স্টেশনে (প্রস্তুত)',inuse:'ব্যবহারে',maintenance:'রক্ষণাবেক্ষণে'};
+const STATUS_CLS={available:'t-ok',inuse:'t-warn',maintenance:'t-bad'};
+
+const defaultLocations=()=>[
+ ['T1 Arrival Exit','টার্মিনাল ১ – আগমন বহির্গমন',80,15],
+ ['T1 Departure Entry','টার্মিনাল ১ – প্রস্থান প্রবেশ',60,10],
+ ['T2 Arrival Exit','টার্মিনাল ২ – আগমন বহির্গমন',80,15],
+ ['T2 Departure Entry','টার্মিনাল ২ – প্রস্থান প্রবেশ',60,10],
+ ['Car Park','কার পার্ক',50,0],
+ ['Baggage Hall','ব্যাগেজ হল',100,20],
+ ['Maintenance Bay','মেইনটেন্যান্স বে',40,0]
+].map((l,i)=>({id:'LOC-'+String(i+1).padStart(2,'0'),name:l[0],desc:l[1],capacity:l[2],min:l[3]}));
+
+let db=load();
+function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.trolleys)return d}catch(e){}
+ return{locations:defaultLocations(),trolleys:[],log:[],seq:0}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){toast('সংরক্ষণ করা যায়নি')}}
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const now=()=>new Date().toLocaleString('bn-BD');
+const locName=id=>(db.locations.find(l=>l.id===id)||{}).name||'—';
+function toast(m){const t=$('#toast');t.textContent=m;t.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(()=>t.style.display='none',3000)}
+function addLog(tid,action,locId){db.log.unshift({t:now(),tid,action,loc:locId||null});db.log=db.log.slice(0,500)}
+
+function qrSvg(text,size=4){const q=qrcode(0,'M');q.addData(text);q.make();return q.createSvgTag(size,0)}
+
+/* ---- Domain actions ---- */
+function applyAction(tid,action,locId){
+ const t=db.trolleys.find(x=>x.id===tid);
+ if(!t)return{ok:false,msg:'ট্রলি পাওয়া যায়নি: '+tid};
+ if(action==='return'){
+   if(!locId)return{ok:false,msg:'স্টেশন নির্বাচন করুন'};
+   t.status=STATUS.AVAILABLE;t.loc=locId;
+ }else if(action==='pickup'){
+   t.status=STATUS.INUSE;t.loc=null;
+ }else if(action==='maint'){
+   const bay=db.locations.find(l=>/maint/i.test(l.name));
+   t.status=STATUS.MAINT;t.loc=bay?bay.id:null;
+ }
+ addLog(tid,action,t.loc);save();
+ return{ok:true,msg:`${tid}: ${action==='return'?'ফেরত – '+locName(t.loc):action==='pickup'?'ব্যবহারে নেওয়া হয়েছে':'রক্ষণাবেক্ষণে পাঠানো হয়েছে'}`};
+}
+function counts(){
+ const c={};db.locations.forEach(l=>c[l.id]=0);
+ db.trolleys.forEach(t=>{if(t.status!==STATUS.INUSE&&c[t.loc]!==undefined)c[t.loc]++});return c}
+
+/* ---- Views ---- */
+const views={
+ dashboard(){
+  const c=counts(),T=db.trolleys;
+  const n=s=>T.filter(t=>t.status===s).length;
+  const alerts=[];
+  db.locations.forEach(l=>{
+    if(l.min>0&&c[l.id]<l.min)alerts.push(['warn',`${l.name}: ট্রলি কম (${c[l.id]}/ন্যূনতম ${l.min}) – পুনর্বণ্টন দরকার`]);
+    if(c[l.id]>l.capacity)alerts.push(['bad',`${l.name}: ধারণক্ষমতা অতিক্রম (${c[l.id]}/${l.capacity}) – সংগ্রহ দরকার`]);
+  });
+  return`<div class="grid">
+   <div class="stat"><b>${T.length}</b><span>মোট ট্রলি</span></div>
+   <div class="stat"><b>${n('available')}</b><span>স্টেশনে প্রস্তুত</span></div>
+   <div class="stat"><b>${n('inuse')}</b><span>ব্যবহারে</span></div>
+   <div class="stat"><b>${n('maintenance')}</b><span>রক্ষণাবেক্ষণে</span></div></div>
+   <div class="card" style="margin-top:14px"><h2>সতর্কতা</h2>${alerts.length?alerts.map(a=>`<div class="alert ${a[0]==='bad'?'bad':''}">${esc(a[1])}</div>`).join(''):'<span class="mute">কোনো সতর্কতা নেই</span>'}</div>
+   <div class="card"><h2>স্টেশন অনুযায়ী ট্রলি</h2><div class="tblwrap"><table><tr><th>স্টেশন</th><th>সংখ্যা</th><th>সীমা</th><th style="width:30%"></th></tr>
+   ${db.locations.map(l=>{const p=Math.min(100,Math.round(c[l.id]/l.capacity*100));
+     return`<tr><td>${esc(l.name)}<div class="mute" style="font-size:12px">${esc(l.desc)}</div></td><td>${c[l.id]}</td><td>${l.min}–${l.capacity}</td><td><div class="bar"><i style="width:${p}%;background:${c[l.id]>l.capacity?'var(--bad)':l.min&&c[l.id]<l.min?'var(--warn)':'var(--ok)'}"></i></div></td></tr>`}).join('')}
+   </table></div></div>`},
+
+ scan(){
+  return`<div class="card"><h2>QR স্ক্যান / অ্যাকশন</h2>
+   <div class="row"><select id="act"><option value="return">স্টেশনে ফেরত (Return)</option><option value="pickup">ব্যবহারে নেওয়া (Pick-up)</option><option value="maint">রক্ষণাবেক্ষণে পাঠান</option></select>
+   <select id="loc">${db.locations.map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select></div>
+   <div class="row"><button class="btn" id="cam">ক্যামেরা চালু করুন</button><button class="btn sec" id="camstop" style="display:none">বন্ধ করুন</button></div>
+   <div id="reader"></div>
+   <div class="row"><input id="manual" placeholder="ম্যানুয়াল আইডি, যেমন TRL-0001"><button class="btn sec" id="go">জমা দিন</button></div>
+   <div class="mute" style="font-size:13px">ক্যামেরা চালু থাকলে একটানা একাধিক ট্রলি স্ক্যান করা যায়। একই QR ২ সেকেন্ডের মধ্যে দুইবার গ্রহণ হয় না।</div>
+   <div id="last" style="margin-top:8px;font-weight:600"></div></div>`},
+
+ trolleys(){
+  return`<div class="card noprint"><h2>নতুন ট্রলি নিবন্ধন</h2>
+   <div class="row"><input id="qty" type="number" min="1" max="200" value="10" style="width:90px"><select id="nloc">${db.locations.map(l=>`<option value="${l.id}">${esc(l.name)}</option>`).join('')}</select><button class="btn" id="add">তৈরি করুন</button><button class="btn sec" id="print">QR লেবেল প্রিন্ট</button></div></div>
+   <div class="card"><h2>ট্রলি তালিকা (${db.trolleys.length})</h2><div class="tblwrap"><table><tr><th>আইডি</th><th>অবস্থা</th><th>অবস্থান</th><th></th></tr>
+   ${db.trolleys.map(t=>`<tr><td>${esc(t.id)}</td><td><span class="tag ${STATUS_CLS[t.status]}">${STATUS_BN[t.status]}</span></td><td>${esc(locName(t.loc))}</td><td><button class="btn sec" data-del="${esc(t.id)}">মুছুন</button></td></tr>`).join('')||'<tr><td colspan="4" class="mute">কোনো ট্রলি নেই</td></tr>'}</table></div></div>
+   <div class="card" id="printArea"><h2>QR লেবেল</h2><div class="labels">${db.trolleys.map(t=>`<div class="label"><b>${esc(t.id)}</b>${qrSvg('TRL:'+t.id,4)}<small>HSIA Dhaka</small></div>`).join('')}</div></div>`},
+
+ locations(){
+  return`<div class="card"><h2>স্টেশন ও সীমা</h2><div class="tblwrap"><table><tr><th>নাম</th><th>ন্যূনতম</th><th>সর্বোচ্চ</th><th></th></tr>
+   ${db.locations.map(l=>`<tr><td>${esc(l.name)}</td><td><input type="number" min="0" value="${l.min}" data-min="${l.id}" style="width:80px"></td><td><input type="number" min="1" value="${l.capacity}" data-cap="${l.id}" style="width:80px"></td><td></td></tr>`).join('')}</table></div></div>
+   <div class="card"><h2>নতুন স্টেশন</h2><div class="row"><input id="ln" placeholder="নাম"><input id="ld" placeholder="বিবরণ"><button class="btn" id="ladd">যোগ করুন</button></div></div>`},
+
+ history(){
+  const A={return:'ফেরত',pickup:'ব্যবহারে',maint:'রক্ষণাবেক্ষণ',create:'নিবন্ধিত'};
+  return`<div class="card"><h2>কার্যক্রমের লগ</h2><div class="tblwrap"><table><tr><th>সময়</th><th>ট্রলি</th><th>অ্যাকশন</th><th>স্টেশন</th></tr>
+   ${db.log.map(e=>`<tr><td>${esc(e.t)}</td><td>${esc(e.tid)}</td><td>${esc(A[e.action]||e.action)}</td><td>${esc(locName(e.loc))}</td></tr>`).join('')||'<tr><td colspan="4" class="mute">লগ খালি</td></tr>'}</table></div></div>
+   <div class="card"><h2>ডেটা ব্যাকআপ</h2><div class="row"><button class="btn sec" id="exp">এক্সপোর্ট (JSON)</button><label class="btn sec" style="cursor:pointer">ইম্পোর্ট<input id="imp" type="file" accept=".json" hidden></label><button class="btn bad" id="reset">সব মুছে ফেলুন</button></div>
+   <div class="mute" style="font-size:13px">ডেটা এই ব্রাউজারেই সংরক্ষিত থাকে। একাধিক ডিভাইসে ব্যবহার করতে সার্ভার ব্যাকএন্ড লাগবে (পরবর্তী ধাপ)।</div></div>`}
+};
+const TABS=[['dashboard','ড্যাশবোর্ড'],['scan','স্ক্যান'],['trolleys','ট্রলি ও QR'],['locations','স্টেশন'],['history','লগ']];
+let cur='dashboard',scanner=null,lastScan={id:'',t:0};
+
+function stopCam(){if(scanner){scanner.stop().catch(()=>{}).finally(()=>{try{scanner.clear()}catch(e){}});scanner=null}}
+function render(){
+  stopCam();
+  $('#nav').innerHTML=TABS.map(t=>`<button data-tab="${t[0]}" class="${t[0]===cur?'on':''}">${t[1]}</button>`).join('');
+  $('#main').innerHTML=views[cur]();
+  bind();
+}
+function handleScan(text){
+  const m=/^TRL:(TRL-\d+)$/.exec(String(text).trim())||/^(TRL-\d+)$/i.exec(String(text).trim());
+  if(!m){toast('অবৈধ QR');return}
+  const id=m[1].toUpperCase();
+  if(lastScan.id===id&&Date.now()-lastScan.t<2000)return;
+  lastScan={id,t:Date.now()};
+  const r=applyAction(id,$('#act').value,$('#loc').value);
+  $('#last').textContent=(r.ok?'✔ ':'✖ ')+r.msg;toast(r.msg);
+}
+function bind(){
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{cur=b.dataset.tab;render()});
+  const on=(s,f)=>{const e=$(s);if(e)e.onclick=f};
+  on('#go',()=>{handleScan($('#manual').value);$('#manual').value=''});
+  on('#cam',()=>{
+    if(typeof Html5Qrcode==='undefined'){toast('স্ক্যানার লাইব্রেরি লোড হয়নি (ইন্টারনেট লাগবে)');return}
+    scanner=new Html5Qrcode('reader');
+    scanner.start({facingMode:'environment'},{fps:10,qrbox:240},handleScan).then(()=>{$('#cam').style.display='none';$('#camstop').style.display=''}).catch(e=>{toast('ক্যামেরা চালু হয়নি');scanner=null});
+  });
+  on('#camstop',()=>{stopCam();$('#cam').style.display='';$('#camstop').style.display='none'});
+  on('#add',()=>{
+    const q=Math.max(1,Math.min(200,+$('#qty').value||1)),loc=$('#nloc').value;
+    for(let i=0;i<q;i++){const id='TRL-'+String(++db.seq).padStart(4,'0');db.trolleys.push({id,status:STATUS.AVAILABLE,loc});addLog(id,'create',loc)}
+    save();toast(q+'টি ট্রলি যোগ হয়েছে');render()});
+  on('#print',()=>window.print());
+  document.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{if(confirm(b.dataset.del+' মুছবেন?')){db.trolleys=db.trolleys.filter(t=>t.id!==b.dataset.del);save();render()}});
+  document.querySelectorAll('[data-min]').forEach(i=>i.onchange=()=>{db.locations.find(l=>l.id===i.dataset.min).min=Math.max(0,+i.value||0);save()});
+  document.querySelectorAll('[data-cap]').forEach(i=>i.onchange=()=>{db.locations.find(l=>l.id===i.dataset.cap).capacity=Math.max(1,+i.value||1);save()});
+  on('#ladd',()=>{const n=$('#ln').value.trim();if(!n)return;db.locations.push({id:'LOC-'+String(db.locations.length+1+Math.floor(Math.random()*900)).padStart(2,'0'),name:n,desc:$('#ld').value.trim(),capacity:50,min:0});save();render()});
+  on('#exp',()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,1)],{type:'application/json'}));a.download='trolley-data.json';a.click()});
+  const imp=$('#imp');if(imp)imp.onchange=()=>{const f=imp.files[0];if(!f)return;f.text().then(x=>{try{const d=JSON.parse(x);if(!d.trolleys||!d.locations)throw 0;db=d;save();toast('ইম্পোর্ট সম্পন্ন');render()}catch(e){toast('ফাইল সঠিক নয়')}})};
+  on('#reset',()=>{if(confirm('সব ডেটা মুছে যাবে। নিশ্চিত?')){localStorage.removeItem(KEY);db=load();render()}});
+}
+render();
+</script>
+</body>
+</html>
